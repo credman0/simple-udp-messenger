@@ -19,7 +19,7 @@ public class MessageQueue {
 
     public Message remove(){
         Message m = queue.remove();
-        listeners.parallelStream().forEach(e->e.actionPerformed(new ActionEvent(m,ActionEvent.ACTION_PERFORMED,"remove")));
+        listeners.parallelStream().forEach(e -> e.actionPerformed(new ActionEvent(m, ActionEvent.ACTION_PERFORMED, "remove")));
         return m;
     }
 

@@ -1,10 +1,12 @@
 package client;
 
-import java.net.InetAddress;
+import java.net.DatagramSocket;
 
 public class ClientBackend extends Thread{
-    InetAddress serverAddr;
-    int port;
+    protected DatagramSocket socket;
+    protected ClientUI ui;
+
+
 
     public void run(){
 
