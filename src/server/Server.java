@@ -8,13 +8,14 @@ import java.net.SocketException;
 import java.nio.file.Files;
 import java.security.SecureRandom;
 import java.util.HashMap;
-import java.util.Random;
+import java.util.Hashtable;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static java.nio.file.StandardCopyOption.ATOMIC_MOVE;
 
-// TODO implement server token timeouts
 // TODO encryption
 // TODO message delivery verification
 public class Server extends Thread{
@@ -22,11 +23,13 @@ public class Server extends Thread{
     protected static final Pattern CLIENT_MSG_PATTERN = Pattern.compile(CLIENT_MSG_REGEX);
     protected static final String CLIENT_LOGIN_REGEX = "login\\<(.*)\\>";
     protected static final Pattern CLIENT_LOGIN_PATTERN = Pattern.compile(CLIENT_LOGIN_REGEX);
-    protected static final String DIRECT_MSG_REGEX = "\\<(\\S{6})\\>\\<(\\d{10})\\>(.*)";
+    protected static final String CLIENT_LOGOFF_REGEX = "logoff\\<(.*)\\>";
+    protected static final Pattern CLIENT_LOGOFF_PATTERN = Pattern.compile(CLIENT_LOGOFF_REGEX);
+    protected static final String DIRECT_MSG_REGEX = "\\<(.{6})\\>\\<(\\d{10})\\>(.*)";
     protected static final Pattern DIRECT_MSG_PATTERN = Pattern.compile(DIRECT_MSG_REGEX);
     protected final File passwordsFile = new File("passwords");
     protected HashMap<String, String> clientPasswords;
-    protected HashMap<String,ClientData> clientDataMap;
+    protected Hashtable<String,ClientData> clientDataMap;
     protected DatagramSocket socket;
     protected SecureRandom rand = new SecureRandom();
 
@@ -54,7 +57,7 @@ public class Server extends Thread{
         }else{
             clientPasswords = new HashMap<>();
         }
-        clientDataMap = new HashMap<>();
+        clientDataMap = new Hashtable<>();
     }
 
     public void run(){
@@ -81,10 +84,24 @@ public class Server extends Thread{
                 String contents = msgMatcher.group(3);
 
                 if (dest.equals("server")&&CLIENT_LOGIN_PATTERN.matcher(contents).matches()){
+                    // login
                     ClientData data = login(source,clientAddr,clientPort,clientMsg);
                     if (data!=null){
                         // reply success
                         sendMessage(clientAddr,clientPort,"server->"+source+"#Success<"+data.getToken()+">");
+                    }else{
+                        // login failed
+                        sendMessage(clientAddr,clientPort,"server->"+source+"#Error: password does not match!");
+                    }
+                }else if (dest.equals("server")&&CLIENT_LOGOFF_PATTERN.matcher(contents).matches()) {
+                    // logoff
+                    Matcher matcher = CLIENT_LOGOFF_PATTERN.matcher(contents);
+                    matcher.find();
+                    String token = matcher.group(1);
+                    if (clientDataMap.get(source).getToken().equals(token)){
+                        // success
+                        clientDataMap.remove(source);
+                        sendMessage(clientAddr,clientPort,"server->"+source+"#Success<"+token+">");
                     }
                 }else{
                     // just a normal message
@@ -94,6 +111,8 @@ public class Server extends Thread{
                     String msgID = contentMatcher.group(2);
                     String msgContent = contentMatcher.group(3);
                     if (clientDataMap.containsKey(source)&&clientDataMap.get(source).getToken().equals(token)) {
+                        clientDataMap.get(source).updateLastSeen();
+                        startExpirationTimer(clientDataMap.get(source));
                         if (clientDataMap.containsKey(dest)) {
                             ClientData destData = clientDataMap.get(dest);
                             sendMessage(destData.getAddr(), destData.getPort(), source + "->" + dest + "#<" + destData.getToken() + "><" + msgID + ">" + msgContent);
@@ -138,6 +157,7 @@ public class Server extends Thread{
                 String token = generateToken();
                 ClientData clientData = new ClientData(name, addr, port, token);
                 clientDataMap.put(name,clientData);
+                startExpirationTimer(clientData);
                 return clientData;
             }else{
                 return null;
@@ -148,6 +168,7 @@ public class Server extends Thread{
             String token = generateToken();
             ClientData clientData = new ClientData(name, addr, port, token);
             clientDataMap.put(name,clientData);
+            startExpirationTimer(clientData);
             savePasswords();
             return clientData;
         }
@@ -179,10 +200,28 @@ public class Server extends Thread{
     protected String generateToken(){
         StringBuilder builder = new StringBuilder();
         for (int i = 0; i < 6; i++){
-            // characters from 21-126, non-whitespace ascii characters
-            builder.append((char)(rand.nextInt(106)+21));
+            // characters from 31-126, non-whitespace ascii characters
+            builder.append((char)(rand.nextInt(96)+31));
         }
         return builder.toString();
     }
 
+    protected void startExpirationTimer(ClientData client){
+        Timer timer = new Timer("Timeout");
+        timer.schedule(new TimeoutTask(client), 301000);
+    }
+
+    private class TimeoutTask extends TimerTask{
+        private final ClientData client;
+        TimeoutTask(ClientData client){
+            this.client = client;
+        }
+        @Override
+        public void run() {
+            // hasn't been seen in 5 minutes
+            if (System.currentTimeMillis()-client.getLastSeen()>300000){
+                clientDataMap.remove(client);
+            }
+        }
+    }
 }

@@ -1,5 +1,7 @@
 package client;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
@@ -8,11 +10,12 @@ import java.util.Random;
 import java.util.Scanner;
 
 public class ShellFrontend extends Thread implements ClientUI {
-    Scanner scanner = new Scanner(System.in);
+    Scanner scanner = new Scanner(new BufferedReader(new InputStreamReader(System.in)));
     String userID;
     String password;
     int localPort;
     MessageQueue sendQueue;
+    MessageQueue receiveQueue;
     Random rand = new Random();
 
     public static void main (String args[]){
@@ -23,11 +26,31 @@ public class ShellFrontend extends Thread implements ClientUI {
     public ShellFrontend(){
         System.out.println("Local Port: ");
         localPort = scanner.nextInt();
+        // ignore first break
+        scanner.nextLine();
         System.out.println("Username: ");
-        userID = scanner.next();
+        userID = scanner.nextLine();
         System.out.println("Password: ");
-        password = scanner.next();
+        password = scanner.nextLine();
         sendQueue = new MessageQueue();
+        receiveQueue = new MessageQueue();
+        Thread receiveThread = new Thread(new Runnable(){
+
+            @Override
+            public void run() {
+                while(true) {
+                    if (!receiveQueue.isEmpty()) {
+                        System.out.println(receiveQueue.remove());
+                    }
+                    try {
+                        Thread.sleep(500);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        });
+        receiveThread.start();
         ClientBackend backend = null;
         try {
             backend = new ClientBackend(new DatagramSocket(localPort, fetchServerIP()), this);
@@ -40,10 +63,10 @@ public class ShellFrontend extends Thread implements ClientUI {
     public void run(){
         while (true){
             System.out.println("Destination: ");
-            String dest = scanner.next();
+            String dest = scanner.nextLine();
             System.out.println("Message: ");
-            String contents = scanner.next();
-            Message m = new Message(dest,rand,contents);
+            String contents = scanner.nextLine();
+            Message m = new Message(userID, dest,rand,contents);
             sendQueue.add(m);
         }
     }
@@ -71,6 +94,11 @@ public class ShellFrontend extends Thread implements ClientUI {
     @Override
     public String fetchPassword() {
         return password;
+    }
+
+    @Override
+    public MessageQueue getReceiveQueue() {
+        return receiveQueue;
     }
 
     @Override
