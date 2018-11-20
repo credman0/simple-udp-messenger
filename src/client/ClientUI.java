@@ -6,5 +6,6 @@ public interface ClientUI {
     InetAddress fetchServerIP();
     int fetchServerPort();
     String fetchUserID();
-    MessageQueue getMessageQueue();
+    String fetchPassword();
+    MessageQueue getSendQueue();
 }

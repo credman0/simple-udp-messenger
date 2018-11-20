@@ -6,6 +6,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.nio.file.Files;
+import java.security.SecureRandom;
 import java.util.HashMap;
 import java.util.Random;
 import java.util.regex.Matcher;
@@ -27,7 +28,13 @@ public class Server extends Thread{
     protected HashMap<String, String> clientPasswords;
     protected HashMap<String,ClientData> clientDataMap;
     protected DatagramSocket socket;
-    protected Random rand = new Random();
+    protected SecureRandom rand = new SecureRandom();
+
+    public static void main(String[] args){
+        Server server = new Server(12224);
+        server.start();
+    }
+
     public Server(int port) {
         try {
             socket = new DatagramSocket(port);
@@ -44,7 +51,10 @@ public class Server extends Thread{
             } catch (ClassNotFoundException e) {
                 e.printStackTrace();
             }
+        }else{
+            clientPasswords = new HashMap<>();
         }
+        clientDataMap = new HashMap<>();
     }
 
     public void run(){
@@ -55,6 +65,7 @@ public class Server extends Thread{
                 socket.receive(packet);
 
                 String clientMsg = new String(packet.getData(), 0, packet.getLength());
+                System.out.println("Server received raw message:\n"+clientMsg);
                 InetAddress clientAddr = packet.getAddress();
                 int clientPort = packet.getPort();
 
@@ -73,11 +84,12 @@ public class Server extends Thread{
                     ClientData data = login(source,clientAddr,clientPort,clientMsg);
                     if (data!=null){
                         // reply success
-                        sendMessage(clientAddr,clientPort,"server->"+source+"#SUCCESS<"+data.getToken()+">");
+                        sendMessage(clientAddr,clientPort,"server->"+source+"#Success<"+data.getToken()+">");
                     }
                 }else{
                     // just a normal message
                     Matcher contentMatcher = DIRECT_MSG_PATTERN.matcher(contents);
+                    contentMatcher.find();
                     String token = contentMatcher.group(1);
                     String msgID = contentMatcher.group(2);
                     String msgContent = contentMatcher.group(3);
@@ -100,6 +112,7 @@ public class Server extends Thread{
     }
 
     protected void sendMessage(InetAddress clientAddr, int clientPort, String msg) throws IOException {
+        System.out.println("Server sending message:\n"+msg);
         byte[] replyBuf = msg.getBytes();
         DatagramPacket retPacket = new DatagramPacket(replyBuf,replyBuf.length,clientAddr,clientPort);
         socket.send(retPacket);
@@ -117,6 +130,7 @@ public class Server extends Thread{
      */
     protected ClientData login(String name, InetAddress addr, int port, String contents){
         Matcher loginMatch = CLIENT_LOGIN_PATTERN.matcher(contents);
+        loginMatch.find();
         String password = loginMatch.group(1);
         if (clientPasswords.containsKey(name)){
             if (clientPasswords.get(name).equals(password)){
@@ -166,7 +180,7 @@ public class Server extends Thread{
         StringBuilder builder = new StringBuilder();
         for (int i = 0; i < 6; i++){
             // characters from 21-126, non-whitespace ascii characters
-            builder.append((char)rand.nextInt(105)+21);
+            builder.append((char)(rand.nextInt(106)+21));
         }
         return builder.toString();
     }

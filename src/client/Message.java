@@ -1,15 +1,21 @@
 package client;
 
+import java.util.Random;
+
 public class Message {
     private final String dest;
-    private final String token;
     private final String id;
     private final String contents;
 
-    public Message(String dest, String token, String id, String contents) {
+    public Message(String dest, String id, String contents) {
         this.dest = dest;
-        this.token = token;
         this.id = id;
+        this.contents = contents;
+    }
+
+    public Message(String dest, Random rand, String contents) {
+        this.dest = dest;
+        this.id = generateID(rand);
         this.contents = contents;
     }
 
@@ -25,7 +31,9 @@ public class Message {
         return dest;
     }
 
-    public String getToken() {
-        return token;
+    protected String generateID(Random rand){
+        // random 10 digit number
+        int id = rand.nextInt(1000000000);
+        return String.format("%010d",id);
     }
 }
