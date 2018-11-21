@@ -11,7 +11,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class ClientMessageHandler extends Thread {
-    protected final String username;
+    protected String username;
     protected final ClientMessageListener listener;
     protected final MessageQueue sendQueue;
     protected final DatagramSocket socket;
@@ -111,4 +111,7 @@ public class ClientMessageHandler extends Thread {
     }
 
 
+    public void setUserID(String userID) {
+        this.username = userID;
+    }
 }
