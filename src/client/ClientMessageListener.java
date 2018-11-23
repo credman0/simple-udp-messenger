@@ -1,33 +1,36 @@
 package client;
 
+import core.Message;
+
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
-import java.util.HashMap;
+import java.net.SocketException;
 import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class ClientMessageListener extends Thread{
+    protected final MessageQueue sendQueue;
     protected final MessageQueue receiveQueue;
     protected DatagramSocket socket;
     protected final Hashtable<Pattern, Condition> expectedTable = new Hashtable<>();
     protected final Hashtable<Pattern, String> expectedTableOut = new Hashtable<>();
     protected final Lock lock = new ReentrantLock();
 
-    public ClientMessageListener(MessageQueue receiveQueue){
+    public ClientMessageListener(MessageQueue sendQueue, MessageQueue receiveQueue){
+        this.sendQueue = sendQueue;
         this.receiveQueue = receiveQueue;
     }
 
     public void run(){
         byte[] buf = new byte[1024];
         while (true) {
-            if (socket==null){
+            if (socket==null || socket.isClosed()){
                 try {
                     Thread.sleep(500);
                 } catch (InterruptedException e) {
@@ -65,6 +68,7 @@ public class ClientMessageListener extends Thread{
                     // TODO handle errors and confirmations
                     continue;
                 }else{
+                    sendQueue.add(new Message(m.getDest(),"server",m.getId(),"Received"));
                     receiveQueue.add(m);
                 }
 

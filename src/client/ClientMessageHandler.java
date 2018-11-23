@@ -1,5 +1,7 @@
 package client;
 
+import core.Message;
+
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -25,13 +27,15 @@ public class ClientMessageHandler extends Thread {
     protected static final String LOGIN_REGEX = "server->(\\S+)#(?:Success\\<(.*)\\>|Error: password does not match!)";
     protected static final Pattern LOGIN_PATTERN = Pattern.compile(LOGIN_REGEX);
 
+
+
     public ClientMessageHandler(String username, MessageQueue receiveQueue, MessageQueue sendQueue, InetAddress serverAddr, int serverPort) throws IOException {
         this.username = username;
         this.sendQueue = sendQueue;
         this.serverAddr = serverAddr;
         this.serverPort = serverPort;
 
-        listener = new ClientMessageListener(receiveQueue);
+        listener = new ClientMessageListener(sendQueue, receiveQueue);
         listener.start();
 
         sendQueue.addActionListener(actionEvent -> {
@@ -90,7 +94,13 @@ public class ClientMessageHandler extends Thread {
                     if (m.getContents().equals("/logoff")&&m.getDest().equals("server")){
                         sendLogoff();
                     }else {
-                        sendMessage(m);
+                        if (!m.getContents().equals("Received")) {
+                            sendMessage(m);
+                        }else{
+                            // Do not wait for confirmation when sending a confirmation
+                            sendMessage(m,false);
+                        }
+
                     }
                 } catch (IOException e) {
                     e.printStackTrace();
@@ -127,12 +137,22 @@ public class ClientMessageHandler extends Thread {
     }
 
     protected void sendMessage(Message m) throws IOException {
+        sendMessage(m, true);
+    }
+
+    protected void sendMessage(Message m, boolean confirmReceived) throws IOException {
         byte[] replyBuf = (m.getSource()+"->"+m.getDest()+"#<"+token+"><"+m.getId()+">"+m.getContents()).getBytes();
         DatagramPacket retPacket = new DatagramPacket(replyBuf,replyBuf.length,serverAddr,serverPort);
         socket.send(retPacket);
         // replace special characters with same character with preceding backslash
         String sanitizedToken = token.replaceAll("[-.\\+*?\\[^\\]$(){}=!<>|:\\\\]", "\\\\$0");
-        String confirm = listener.waitFor("server-\\>"+m.getSource()+"#\\<"+sanitizedToken+"\\>\\<"+m.getId()+"\\>Success: "+m.getContents(), 2000);
+        if (confirmReceived) {
+            String confirm = listener.waitFor("server-\\>" + m.getSource() + "#\\<" + sanitizedToken + "\\>\\<" + m.getId() + "\\>Success: " + m.getContents(), 2000);
+            if (confirm == null) {
+                // reattempt
+                sendMessage(m);
+            }
+        }
     }
 
 

@@ -1,4 +1,4 @@
-package client;
+package core;
 
 import java.util.Random;
 import java.util.regex.Matcher;

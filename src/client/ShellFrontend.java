@@ -1,5 +1,7 @@
 package client;
 
+import core.Message;
+
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.DatagramSocket;

@@ -1,5 +1,6 @@
 package client;
 
+import core.Message;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
