@@ -14,7 +14,7 @@ public class ClientMessageHandler extends Thread {
     protected String username;
     protected final ClientMessageListener listener;
     protected final MessageQueue sendQueue;
-    protected final DatagramSocket socket;
+    protected DatagramSocket socket;
     protected final InetAddress serverAddr;
     protected final int serverPort;
     protected String token;
@@ -25,14 +25,13 @@ public class ClientMessageHandler extends Thread {
     protected static final String LOGIN_REGEX = "server->(\\S+)#(?:Success\\<(.*)\\>|Error: password does not match!)";
     protected static final Pattern LOGIN_PATTERN = Pattern.compile(LOGIN_REGEX);
 
-    public ClientMessageHandler(String username, MessageQueue receiveQueue, MessageQueue sendQueue, DatagramSocket socket, InetAddress serverAddr, int serverPort) throws IOException {
+    public ClientMessageHandler(String username, MessageQueue receiveQueue, MessageQueue sendQueue, InetAddress serverAddr, int serverPort) throws IOException {
         this.username = username;
         this.sendQueue = sendQueue;
-        this.socket = socket;
         this.serverAddr = serverAddr;
         this.serverPort = serverPort;
 
-        listener = new ClientMessageListener(receiveQueue, socket);
+        listener = new ClientMessageListener(receiveQueue);
         listener.start();
 
         sendQueue.addActionListener(actionEvent -> {
@@ -47,11 +46,19 @@ public class ClientMessageHandler extends Thread {
         });
     }
 
-    public void attemptConnect(String password) throws IOException {
+    public void attemptConnect(String password, int port) throws IOException {
         byte[] buf = (username+"->server#login<"+password+">").getBytes();
+        if (socket!=null){
+            socket.close();
+        }
+        setSocket(new DatagramSocket(port,serverAddr));
         // send the request
         socket.send(new DatagramPacket(buf, buf.length, serverAddr, serverPort));
         String ret = listener.waitFor(LOGIN_REGEX, 2000);
+        if (ret==null){
+            // most likely the server is offline
+            return;
+        }
         Matcher loginMatcher = LOGIN_PATTERN.matcher(ret);
         if (loginMatcher.matches()&&loginMatcher.group(1).equals(username)){
             if (loginMatcher.group(2)==null){
@@ -61,7 +68,6 @@ public class ClientMessageHandler extends Thread {
                 token = loginMatcher.group(2);
             }
         }
-
     }
 
     public boolean isConnected(){
@@ -71,6 +77,14 @@ public class ClientMessageHandler extends Thread {
     public void run(){
         while (true) {
             while (!sendQueue.isEmpty()) {
+                if (socket==null){
+                    try {
+                        Thread.sleep(500);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    continue;
+                }
                 Message m = sendQueue.remove();
                 try {
                     if (m.getContents().equals("/logoff")&&m.getDest().equals("server")){
@@ -94,6 +108,18 @@ public class ClientMessageHandler extends Thread {
         }
     }
 
+    public boolean logoff() throws IOException {
+        sendLogoff();
+        String sanitizedToken = token.replaceAll("[-.\\+*?\\[^\\]$(){}=!<>|:\\\\]", "\\\\$0");
+        String confirm = listener.waitFor("server-\\>"+username+"#Success\\<"+sanitizedToken+"\\>", 2000);
+        if (confirm!=null){
+            token = null;
+            socket.close();
+            setSocket(null);
+        }
+        return confirm != null;
+    }
+
     protected void sendLogoff() throws IOException {
         byte[] replyBuf = (username+"->server#logoff<"+token+">").getBytes();
         DatagramPacket retPacket = new DatagramPacket(replyBuf,replyBuf.length,serverAddr,serverPort);
@@ -107,11 +133,19 @@ public class ClientMessageHandler extends Thread {
         // replace special characters with same character with preceding backslash
         String sanitizedToken = token.replaceAll("[-.\\+*?\\[^\\]$(){}=!<>|:\\\\]", "\\\\$0");
         String confirm = listener.waitFor("server-\\>"+m.getSource()+"#\\<"+sanitizedToken+"\\>\\<"+m.getId()+"\\>Success: "+m.getContents(), 2000);
-        System.out.println("confirmed "+confirm);
     }
 
 
     public void setUserID(String userID) {
         this.username = userID;
+    }
+
+    public DatagramSocket getSocket() {
+        return socket;
+    }
+
+    public void setSocket(DatagramSocket socket) {
+        this.socket = socket;
+        listener.socket = socket;
     }
 }

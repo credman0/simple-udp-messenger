@@ -1,23 +1,20 @@
 package client;
 
-import javafx.application.Application;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
-import javafx.fxml.FXMLLoader;
-import javafx.scene.Parent;
-import javafx.scene.Scene;
+import javafx.scene.control.Button;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
-import javafx.stage.Stage;
 
+import java.io.IOException;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.Random;
 
-public class GUIFrontend extends Application implements ClientUI {
+public class GUIFrontend implements ClientUI{
     @FXML
     TextArea chatArea;
     @FXML
@@ -30,38 +27,44 @@ public class GUIFrontend extends Application implements ClientUI {
     TextField userIDField;
     @FXML
     PasswordField passwordField;
+    @FXML
+    Button loginButton;
     MessageQueue sendQueue;
     MessageQueue receiveQueue;
     DatagramSocket socket;
-    ClientBackend backend;
+    ClientMessageHandler handler;
     Random rand = new Random();
-    public static void main (String[] args){
-        launch(args);
-    }
-    public void start(Stage stage) throws Exception {
-        Parent root = FXMLLoader.load(getClass().getResource("GUI.fxml"));
-        Scene scene = new Scene(root);
 
-        stage.setTitle("UDP Chat");
-        stage.setScene(scene);
-        stage.show();
-//        try {
-//            socket = new DatagramSocket(Integer.parseInt(localPortField.getText()), fetchServerIP());
-//            backend = new ClientBackend(socket, this);
-//        } catch (SocketException e) {
-//            e.printStackTrace();
-//        }
-//        backend.start();
-    }
-
-    public void init(){
-        new Thread(() -> {
+    public void start(){
+        try {
+            handler = new ClientMessageHandler(fetchUserID(), getReceiveQueue(), getSendQueue(), fetchServerIP(), fetchServerPort());
+        } catch (SocketException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        handler.start();
+        Thread receiveThread = new Thread(() -> {
             while(true) {
-                System.out.println(chatArea);
+                if (!receiveQueue.isEmpty()) {
+                    String text = chatArea.getText();
+                    Message m = receiveQueue.remove();
+                    chatArea.setText(text+m.getSource()+": "+m.getContents()+"\n");
+                }
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
             }
-        }).start();
-        backend = null;
+        });
+        receiveThread.start();
+        // set the button to fire on enter when focused
+        loginButton.defaultButtonProperty().bind(loginButton.focusedProperty());
+
+
     }
+
     public GUIFrontend(){
         sendQueue = new MessageQueue();
         receiveQueue = new MessageQueue();
@@ -103,11 +106,27 @@ public class GUIFrontend extends Application implements ClientUI {
 
     @FXML
     public void addMessageToQueue(ActionEvent actionEvent) {
-        System.out.println("Added");
         String source = fetchUserID();
         String dest = destinationField.getText();
         String content = messageField.getText();
         messageField.clear();
         sendQueue.add(new Message(source,dest,rand,content));
+    }
+
+    @FXML
+    public void login(ActionEvent actionEvent){
+        if (handler.isConnected()){
+            try {
+                handler.logoff();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        try {
+            handler.setUserID(fetchUserID());
+            handler.attemptConnect(fetchPassword(), Integer.parseInt(localPortField.getText()));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 }

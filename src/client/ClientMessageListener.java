@@ -5,6 +5,7 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.util.HashMap;
 import java.util.Hashtable;
+import java.util.Iterator;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
@@ -14,19 +15,26 @@ import java.util.regex.Pattern;
 
 public class ClientMessageListener extends Thread{
     protected final MessageQueue receiveQueue;
-    protected final DatagramSocket socket;
+    protected DatagramSocket socket;
     protected final Hashtable<Pattern, Condition> expectedTable = new Hashtable<>();
     protected final Hashtable<Pattern, String> expectedTableOut = new Hashtable<>();
     protected final Lock lock = new ReentrantLock();
 
-    public ClientMessageListener(MessageQueue receiveQueue, DatagramSocket socket){
+    public ClientMessageListener(MessageQueue receiveQueue){
         this.receiveQueue = receiveQueue;
-        this.socket = socket;
     }
 
     public void run(){
         byte[] buf = new byte[1024];
         while (true) {
+            if (socket==null){
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                continue;
+            }
             try {
                 DatagramPacket packet = new DatagramPacket(buf, buf.length);
                 socket.receive(packet);
@@ -34,13 +42,15 @@ public class ClientMessageListener extends Thread{
                 String rawMsg = new String(packet.getData(), 0, packet.getLength());
 
                 boolean consumed = false;
-                for (Pattern p:expectedTable.keySet()){
+                for (Iterator<Pattern> it = expectedTable.keySet().iterator(); it.hasNext(); ) {
+                    Pattern p = it.next();
                     if (p.matcher(rawMsg).matches()){
                         consumed = true;
                         expectedTableOut.put(p,rawMsg);
                         lock.lock();
                         try {
-                            expectedTable.remove(p).signalAll();
+                            expectedTable.get(p).signalAll();
+                            it.remove();
                         }finally {
                             lock.unlock();
                         }

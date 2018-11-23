@@ -21,6 +21,7 @@
             <TextField fx:id = "userIDField" GridPane.rowIndex="1" GridPane.columnIndex="0"/>
             <PasswordField fx:id = "passwordField" GridPane.rowIndex="1" GridPane.columnIndex="1" GridPane.columnSpan="1"/>
             <TextField fx:id = "localPortField" text="12225" GridPane.rowIndex="2" GridPane.columnIndex="1" GridPane.columnSpan="1"/>
+            <Button text="Login" fx:id="loginButton" onAction="#login" GridPane.rowIndex="1" GridPane.columnIndex="3"/>
         </GridPane></top>
         <center>
             <TextArea fx:id = "chatArea"/>
@@ -29,8 +30,8 @@
             <GridPane  hgap="10" vgap="10">
                 <padding><Insets top="25" right="25" bottom="10" left="25"/></padding>
                 <TextField fx:id = "destinationField" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
-                <TextField fx:id = "messageField" GridPane.rowIndex="0" GridPane.columnIndex="1" GridPane.columnSpan="4"/>
-                <Button text="send" fx:id = "sendButton" onAction="#addMessageToQueue" GridPane.rowIndex="0" GridPane.columnIndex="5"/>
+                <TextField fx:id = "messageField" GridPane.rowIndex="0" GridPane.columnIndex="1" onAction="#addMessageToQueue"/>
+                <Button text="Send" fx:id = "sendButton" onAction="#addMessageToQueue" GridPane.rowIndex="0" GridPane.columnIndex="5"/>
             </GridPane>
         </bottom>
     </BorderPane>

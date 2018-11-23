@@ -3,6 +3,10 @@ package client;
 import java.io.IOException;
 import java.net.DatagramSocket;
 
+@Deprecated
+/**
+ * use ClientMessageHandler directly instead
+ */
 public class ClientBackend extends Thread{
     protected DatagramSocket socket;
     protected ClientUI ui;
@@ -14,10 +18,10 @@ public class ClientBackend extends Thread{
 
     public void run(){
         try {
-            ClientMessageHandler handler = new ClientMessageHandler(ui.fetchUserID(), ui.getReceiveQueue(), ui.getSendQueue(),socket, ui.fetchServerIP(), ui.fetchServerPort());
+            ClientMessageHandler handler = new ClientMessageHandler(ui.fetchUserID(), ui.getReceiveQueue(), ui.getSendQueue(), ui.fetchServerIP(), ui.fetchServerPort());
             while(!handler.isConnected()){
                 handler.setUserID(ui.fetchUserID());
-                handler.attemptConnect(ui.fetchPassword());
+                handler.attemptConnect(ui.fetchPassword(), socket.getLocalPort());
                 if (!handler.isConnected()){
                     Thread.sleep(500);
                 }
