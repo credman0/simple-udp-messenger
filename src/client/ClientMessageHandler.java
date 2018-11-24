@@ -146,8 +146,9 @@ public class ClientMessageHandler extends Thread {
         socket.send(retPacket);
         // replace special characters with same character with preceding backslash
         String sanitizedToken = token.replaceAll("[-.\\+*?\\[^\\]$(){}=!<>|:\\\\]", "\\\\$0");
+        String sanitizedContents = m.getContents().replaceAll("[-.\\+*?\\[^\\]$(){}=!<>|:\\\\]", "\\\\$0");
         if (confirmReceived) {
-            String confirm = listener.waitFor("server-\\>" + m.getSource() + "#\\<" + sanitizedToken + "\\>\\<" + m.getId() + "\\>Success: " + m.getContents(), 2000);
+            String confirm = listener.waitFor("server-\\>" + m.getSource() + "#\\<" + sanitizedToken + "\\>\\<" + m.getId() + "\\>Success: " + sanitizedContents, 2000);
             if (confirm == null) {
                 // reattempt
                 sendMessage(m);
