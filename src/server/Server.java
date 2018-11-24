@@ -229,7 +229,13 @@ public class Server extends Thread {
             // characters from 31-126, non-whitespace ascii characters
             builder.append((char) (rand.nextInt(96) + 31));
         }
-        return builder.toString();
+        String token = builder.toString();
+        if (token.contains("#")){
+            // we dont want to generate tokens containing '#'
+            return generateToken();
+        }else {
+            return token;
+        }
     }
 
     protected void startExpirationTimer(ClientData client) {
