@@ -9,4 +9,5 @@ public interface ClientUI {
     String fetchPassword();
     MessageQueue getReceiveQueue();
     MessageQueue getSendQueue();
+    void deliverSystemMessage(String string);
 }

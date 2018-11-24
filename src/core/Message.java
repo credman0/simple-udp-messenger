@@ -62,6 +62,6 @@ public class Message {
     }
 
     public String toString(){
-        return getSource()+"->"+getDest()+"# "+getContents();
+        return getSource()+"->"+getDest()+": "+getContents();
     }
 }

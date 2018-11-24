@@ -12,19 +12,21 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class ClientMessageListener extends Thread{
-    protected final MessageQueue sendQueue;
-    protected final MessageQueue receiveQueue;
     protected DatagramSocket socket;
     protected final Hashtable<Pattern, Condition> expectedTable = new Hashtable<>();
     protected final Hashtable<Pattern, String> expectedTableOut = new Hashtable<>();
     protected final Lock lock = new ReentrantLock();
+    protected final ClientUI ui;
 
-    public ClientMessageListener(MessageQueue sendQueue, MessageQueue receiveQueue){
-        this.sendQueue = sendQueue;
-        this.receiveQueue = receiveQueue;
+    protected final static String GENERAL_MSG_REGEX = "server->(\\S+)#(.*)";
+    protected final static Pattern GENERAL_MSG_PATTERN = Pattern.compile(GENERAL_MSG_REGEX);
+
+    public ClientMessageListener(ClientUI ui){
+        this.ui = ui;
     }
 
     public void run(){
@@ -65,11 +67,14 @@ public class ClientMessageListener extends Thread{
 
                 Message m = Message.fromRaw(rawMsg);
                 if (m==null){
-                    // TODO handle errors and confirmations
-                    continue;
+                    Matcher generalMatcher = GENERAL_MSG_PATTERN.matcher(rawMsg);
+                    if(!generalMatcher.matches()){
+                        continue;
+                    }
+                    ui.getReceiveQueue().add(new Message("server", generalMatcher.group(1),"",generalMatcher.group(2)));
                 }else{
-                    sendQueue.add(new Message(m.getDest(),"server",m.getId(),"Received"));
-                    receiveQueue.add(m);
+                    ui.getSendQueue().add(new Message(m.getDest(),"server",m.getId(),"Received"));
+                    ui.getReceiveQueue().add(m);
                 }
 
 

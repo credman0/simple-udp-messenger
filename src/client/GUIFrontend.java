@@ -13,6 +13,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.util.ArrayDeque;
 import java.util.Random;
 
 public class GUIFrontend implements ClientUI{
@@ -32,13 +33,14 @@ public class GUIFrontend implements ClientUI{
     Button loginButton;
     MessageQueue sendQueue;
     MessageQueue receiveQueue;
-    DatagramSocket socket;
     ClientMessageHandler handler;
     Random rand = new Random();
 
+    ChatLogManager chatLogManager = new ChatLogManager();
+
     public void start(){
         try {
-            handler = new ClientMessageHandler(fetchUserID(), getReceiveQueue(), getSendQueue(), fetchServerIP(), fetchServerPort());
+            handler = new ClientMessageHandler(this);
         } catch (SocketException e) {
             e.printStackTrace();
         } catch (IOException e) {
@@ -50,10 +52,10 @@ public class GUIFrontend implements ClientUI{
                 if (!receiveQueue.isEmpty()) {
                     String text = chatArea.getText();
                     Message m = receiveQueue.remove();
-                    chatArea.setText(text+m.getSource()+": "+m.getContents()+"\n");
+                    chatLogManager.add(m.toString());
                 }
                 try {
-                    Thread.sleep(500);
+                    Thread.sleep(100);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
@@ -63,7 +65,8 @@ public class GUIFrontend implements ClientUI{
         // set the button to fire on enter when focused
         loginButton.defaultButtonProperty().bind(loginButton.focusedProperty());
 
-
+        Thread chatLogThread = new Thread(chatLogManager);
+        chatLogThread.start();
     }
 
     public GUIFrontend(){
@@ -105,13 +108,20 @@ public class GUIFrontend implements ClientUI{
         return sendQueue;
     }
 
+    @Override
+    public void deliverSystemMessage(String string) {
+        chatLogManager.add(string);
+    }
+
     @FXML
     public void addMessageToQueue(ActionEvent actionEvent) {
         String source = fetchUserID();
         String dest = destinationField.getText();
         String content = messageField.getText();
         messageField.clear();
-        sendQueue.add(new Message(source,dest,rand,content));
+        Message m = new Message(source,dest,rand,content);
+        chatLogManager.add(m.toString());
+        sendQueue.add(m);
     }
 
     @FXML
@@ -128,6 +138,36 @@ public class GUIFrontend implements ClientUI{
             handler.attemptConnect(fetchPassword(), Integer.parseInt(localPortField.getText()));
         } catch (IOException e) {
             e.printStackTrace();
+        }
+    }
+
+    private class ChatLogManager implements Runnable {
+        private ArrayDeque<String> queue = new ArrayDeque<>();
+        private String text = "";
+
+        @Override
+        public void run() {
+            while (true){
+                if (!queue.isEmpty()){
+                    synchronized (this) {
+                        String addition = queue.remove();
+                        text = text+addition+"\n";
+                        chatArea.setText(text);
+                    }
+                }else {
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        }
+
+        public void add(String string){
+            synchronized (this){
+                queue.add(string);
+            }
         }
     }
 }

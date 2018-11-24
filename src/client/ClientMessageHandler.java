@@ -15,11 +15,9 @@ import java.util.regex.Pattern;
 public class ClientMessageHandler extends Thread {
     protected String username;
     protected final ClientMessageListener listener;
-    protected final MessageQueue sendQueue;
     protected DatagramSocket socket;
-    protected final InetAddress serverAddr;
-    protected final int serverPort;
     protected String token;
+    protected final ClientUI ui;
 
     protected final Lock lock = new ReentrantLock();
     protected final Condition notEmpty = lock.newCondition();
@@ -27,18 +25,14 @@ public class ClientMessageHandler extends Thread {
     protected static final String LOGIN_REGEX = "server->(\\S+)#(?:Success\\<(.*)\\>|Error: password does not match!)";
     protected static final Pattern LOGIN_PATTERN = Pattern.compile(LOGIN_REGEX);
 
+    public ClientMessageHandler(ClientUI ui) throws IOException {
 
+        this.ui = ui;
 
-    public ClientMessageHandler(String username, MessageQueue receiveQueue, MessageQueue sendQueue, InetAddress serverAddr, int serverPort) throws IOException {
-        this.username = username;
-        this.sendQueue = sendQueue;
-        this.serverAddr = serverAddr;
-        this.serverPort = serverPort;
-
-        listener = new ClientMessageListener(sendQueue, receiveQueue);
+        listener = new ClientMessageListener(ui);
         listener.start();
 
-        sendQueue.addActionListener(actionEvent -> {
+        ui.getSendQueue().addActionListener(actionEvent -> {
             if (actionEvent.getActionCommand().equals("add")){
                 lock.lock();
                 try {
@@ -55,9 +49,9 @@ public class ClientMessageHandler extends Thread {
         if (socket!=null){
             socket.close();
         }
-        setSocket(new DatagramSocket(port,serverAddr));
+        setSocket(new DatagramSocket(port,ui.fetchServerIP()));
         // send the request
-        socket.send(new DatagramPacket(buf, buf.length, serverAddr, serverPort));
+        socket.send(new DatagramPacket(buf, buf.length, ui.fetchServerIP(), ui.fetchServerPort()));
         String ret = listener.waitFor(LOGIN_REGEX, 2000);
         if (ret==null){
             // most likely the server is offline
@@ -67,7 +61,7 @@ public class ClientMessageHandler extends Thread {
         if (loginMatcher.matches()&&loginMatcher.group(1).equals(username)){
             if (loginMatcher.group(2)==null){
                 // login failed
-                System.out.println("Received response "+ ret);
+                ui.deliverSystemMessage(ret);
             }else {
                 token = loginMatcher.group(2);
             }
@@ -80,7 +74,7 @@ public class ClientMessageHandler extends Thread {
 
     public void run(){
         while (true) {
-            while (!sendQueue.isEmpty()) {
+            while (!ui.getSendQueue().isEmpty()) {
                 if (socket==null){
                     try {
                         Thread.sleep(500);
@@ -89,7 +83,7 @@ public class ClientMessageHandler extends Thread {
                     }
                     continue;
                 }
-                Message m = sendQueue.remove();
+                Message m = ui.getSendQueue().remove();
                 try {
                     if (m.getContents().equals("/logoff")&&m.getDest().equals("server")){
                         sendLogoff();
@@ -132,7 +126,7 @@ public class ClientMessageHandler extends Thread {
 
     protected void sendLogoff() throws IOException {
         byte[] replyBuf = (username+"->server#logoff<"+token+">").getBytes();
-        DatagramPacket retPacket = new DatagramPacket(replyBuf,replyBuf.length,serverAddr,serverPort);
+        DatagramPacket retPacket = new DatagramPacket(replyBuf,replyBuf.length,ui.fetchServerIP(),ui.fetchServerPort());
         socket.send(retPacket);
     }
 
@@ -142,7 +136,7 @@ public class ClientMessageHandler extends Thread {
 
     protected void sendMessage(Message m, boolean confirmReceived) throws IOException {
         byte[] replyBuf = (m.getSource()+"->"+m.getDest()+"#<"+token+"><"+m.getId()+">"+m.getContents()).getBytes();
-        DatagramPacket retPacket = new DatagramPacket(replyBuf,replyBuf.length,serverAddr,serverPort);
+        DatagramPacket retPacket = new DatagramPacket(replyBuf,replyBuf.length,ui.fetchServerIP(),ui.fetchServerPort());
         socket.send(retPacket);
         // replace special characters with same character with preceding backslash
         String sanitizedToken = token.replaceAll("[-.\\+*?\\[^\\]$(){}=!<>|:\\\\]", "\\\\$0");

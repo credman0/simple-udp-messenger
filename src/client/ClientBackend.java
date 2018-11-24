@@ -18,7 +18,7 @@ public class ClientBackend extends Thread{
 
     public void run(){
         try {
-            ClientMessageHandler handler = new ClientMessageHandler(ui.fetchUserID(), ui.getReceiveQueue(), ui.getSendQueue(), ui.fetchServerIP(), ui.fetchServerPort());
+            ClientMessageHandler handler = new ClientMessageHandler(ui);
             while(!handler.isConnected()){
                 handler.setUserID(ui.fetchUserID());
                 handler.attemptConnect(ui.fetchPassword(), socket.getLocalPort());

@@ -107,4 +107,9 @@ public class ShellFrontend extends Thread implements ClientUI {
     public MessageQueue getSendQueue() {
         return sendQueue;
     }
+
+    @Override
+    public void deliverSystemMessage(String string) {
+        System.out.println(string);
+    }
 }
