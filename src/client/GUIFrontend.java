@@ -153,6 +153,8 @@ public class GUIFrontend implements ClientUI{
                         String addition = queue.remove();
                         text = text+addition+"\n";
                         chatArea.setText(text);
+                        chatArea.selectPositionCaret(text.length());
+                        chatArea.deselect();
                     }
                 }else {
                     try {
