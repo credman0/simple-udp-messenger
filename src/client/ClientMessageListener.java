@@ -62,23 +62,30 @@ public class ClientMessageListener extends Thread{
                 }
 
                 boolean consumed = false;
-                for (Iterator<Pattern> it = expectedTable.keySet().iterator(); it.hasNext(); ) {
-                    Pattern p = it.next();
-                    String msgTest = rawMsg;
-                    if (expectEncrypted.get(p)){
-                        msgTest = decrypt(rawMsg);
-                    }
-                    if (p.matcher(msgTest).matches()){
-                        consumed = true;
-                        expectedTableOut.put(p,msgTest);
-                        lock.lock();
-                        try {
-                            expectedTable.get(p).signalAll();
-                            it.remove();
-                        }finally {
-                            lock.unlock();
+                lock.lock();
+                try {
+                    for (Iterator<Pattern> it = expectedTable.keySet().iterator(); it.hasNext(); ) {
+                        Pattern p = it.next();
+                        String msgTest = rawMsg;
+
+                        if (expectEncrypted.get(p)){
+                            try {
+                                msgTest = decrypt(rawMsg);
+                            }catch(BadPaddingException e){
+                                // evidently this message wasn't encrypted
+                                continue;
+                            }
+                        }
+                        if (p.matcher(msgTest).matches()){
+                            consumed = true;
+                            expectedTableOut.put(p,msgTest);
+                                expectedTable.get(p).signalAll();
+                                it.remove();
+                                expectEncrypted.remove(p);
                         }
                     }
+                }finally {
+                    lock.unlock();
                 }
                 if (consumed){
                     continue;
@@ -125,16 +132,16 @@ public class ClientMessageListener extends Thread{
     /**
      * wait for a message that matches the regex, unless the timeout happens first
      * @param regex
-     * @param timeout
+     * @param timeout timeout time in milliseconds
      * @return the message that matches
      */
     public String waitFor(String regex, long timeout, boolean encrypted){
         Pattern pattern = Pattern.compile(regex);
         Condition condition = lock.newCondition();
-        expectedTable.put(pattern,condition);
-        expectEncrypted.put(pattern, encrypted);
         lock.lock();
         try{
+            expectedTable.put(pattern,condition);
+            expectEncrypted.put(pattern, encrypted);
             condition.await(timeout, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             e.printStackTrace();

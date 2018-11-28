@@ -77,6 +77,20 @@ public class ClientMessageHandler extends Thread {
 
         listener = new ClientMessageListener(ui, decryptCipher);
         listener.start();
+
+        Thread keyReqHandler = new Thread(() -> {
+            while (true){
+                String req = listener.waitFor("server->\\S+#reqkey", 10000, false);
+                if (req!=null){
+                    try {
+                        sendRawUnencrypted((ui.fetchUserID()+"->server#key:"+new String(Base64.getEncoder().encode(keyPair.getPublic().getEncoded()))).getBytes());
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        });
+        keyReqHandler.start();
     }
 
     public void attemptConnect(String password, int port) throws IOException {
@@ -117,7 +131,7 @@ public class ClientMessageHandler extends Thread {
             }
         }
         // send the request
-        sendRaw(username, "server", "login<"+password+">"+new String(Base64.getEncoder().encode(keyPair.getPublic().getEncoded())));
+        sendRaw(username, "server", "login<"+password+">");
         ret = listener.waitFor(LOGIN_REGEX, 2000, true);
         if (ret==null){
             // most likely the server is offline
@@ -199,7 +213,7 @@ public class ClientMessageHandler extends Thread {
     }
 
     protected void sendMessage(Message m, boolean confirmReceived) throws IOException {
-        sendRaw(m.getSource(),m.getDest(),m.getContents());
+        sendRaw(m.getSource(),m.getDest(),"<"+token+">"+"<"+m.getId()+">"+m.getContents());
         // replace special characters with same character with preceding backslash
         String sanitizedToken = token.replaceAll("[-.\\+*?\\[^\\]$(){}=!<>|:\\\\]", "\\\\$0");
         String sanitizedContents = m.getContents().replaceAll("[-.\\+*?\\[^\\]$(){}=!<>|:\\\\]", "\\\\$0");

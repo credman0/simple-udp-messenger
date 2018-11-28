@@ -1,6 +1,7 @@
 package server;
 
 import core.Message;
+import javafx.util.Pair;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
@@ -26,12 +27,14 @@ import static java.nio.file.StandardCopyOption.ATOMIC_MOVE;
 public class Server extends Thread {
     protected static final String CLIENT_MSG_REGEX = "(\\S+)-\\>(\\S+)#(.*)";
     protected static final Pattern CLIENT_MSG_PATTERN = Pattern.compile(CLIENT_MSG_REGEX);
-    protected static final String CLIENT_LOGIN_REGEX = "login\\<(.*)\\>(.*)";
+    protected static final String CLIENT_LOGIN_REGEX = "login\\<(.*)\\>";
     protected static final Pattern CLIENT_LOGIN_PATTERN = Pattern.compile(CLIENT_LOGIN_REGEX);
     protected static final String CLIENT_LOGOFF_REGEX = "logoff\\<(.*)\\>";
     protected static final Pattern CLIENT_LOGOFF_PATTERN = Pattern.compile(CLIENT_LOGOFF_REGEX);
     protected static final String DIRECT_MSG_REGEX = "\\<(.{6})\\>\\<(\\d{10})\\>(.*)";
     protected static final Pattern DIRECT_MSG_PATTERN = Pattern.compile(DIRECT_MSG_REGEX);
+    protected static final String KEY_REGEX = "\\S+->server#key:(.*)";
+    protected static final Pattern KEY_PATTERN = Pattern.compile(KEY_REGEX);
     protected final File passwordsFile = new File("passwords");
     protected HashMap<String, String> clientPasswords;
     protected Hashtable<String, ClientData> clientDataMap;
@@ -44,6 +47,8 @@ public class Server extends Thread {
 
     protected final KeyPair keyPair;
     protected Cipher decryptCipher;
+
+    ArrayList<Pair<DatagramPacket, byte[]>> buffer = new ArrayList<>();
 
     public static void main(String[] args) {
         Server server = new Server(12224);
@@ -96,15 +101,22 @@ public class Server extends Thread {
         byte[] buf = new byte[1024];
         while (true) {
             try {
-                DatagramPacket packet = new DatagramPacket(buf, buf.length);
-                socket.receive(packet);
+                DatagramPacket packet;
+                if (buffer.isEmpty()) {
+                    packet = new DatagramPacket(buf, buf.length);
+                    socket.receive(packet);
+                } else {
+                    Pair data = buffer.remove(0);
+                    buf = (byte[]) data.getValue();
+                    packet = (DatagramPacket) data.getKey();
+                }
 
                 InetAddress clientAddr = packet.getAddress();
                 int clientPort = packet.getPort();
 
                 String clientMsg = new String(packet.getData(), 0, packet.getLength());
 
-                System.out.println("Server received raw message:\n" + clientMsg);
+                System.out.println("Server received raw message:\n\t" + clientMsg);
 
                 if (!checkFormatting(clientMsg)) {
                     sendMessageUnencrypted(clientAddr, clientPort, "Unrecognized message format");
@@ -128,6 +140,8 @@ public class Server extends Thread {
                 contents = new String(decryptedContents);
                 clientMsg = source + "->" + dest + "#" + contents;
 
+                System.out.println("Server received decrypted message:\n\t" + clientMsg);
+
                 // check if this was an expected message
                 // uses the general Message class because that does the parsing easily
                 Message m = Message.fromRaw(clientMsg);
@@ -141,10 +155,7 @@ public class Server extends Thread {
                 if (dest.equals("server") && loginMatcher.matches()) {
                     // login
                     ClientData data = login(source, clientAddr, clientPort, clientMsg);
-                    String key = loginMatcher.group(2);
-                    byte[] keyBytes = Base64.getDecoder().decode(key);
-                    PublicKey clientKey = KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(keyBytes));
-                    data.setKey(clientKey);
+                    reqKey(data);
                     if (data.isLoggedIn()) {
                         // reply success
                         sendMessage(data, "server->" + source + "#Success<" + data.getToken() + ">");
@@ -153,19 +164,23 @@ public class Server extends Thread {
                         sendMessage(data, "server->" + source + "#Error: password does not match!");
                     }
                 } else {
-                    if (!clientDataMap.contains(source)) {
+                    if (!clientDataMap.containsKey(source)) {
                         sendMessageUnencrypted(clientAddr, clientPort, "server->" + source + "#Error: Missing key");
                         continue;
                     }
                     ClientData clientData = clientDataMap.get(source);
+                    if (clientData.getKey()==null){
+                        reqKey(clientData);
+                    }
                     if (dest.equals("server") && CLIENT_LOGOFF_PATTERN.matcher(contents).matches()) {
                         // logoff
                         Matcher matcher = CLIENT_LOGOFF_PATTERN.matcher(contents);
                         matcher.find();
                         String token = matcher.group(1);
-                        if (clientDataMap.get(source).getToken().equals(token)) {
+                        if (clientData.getToken().equals(token)) {
                             // success
                             sendMessage(clientData, "server->" + source + "#Success<" + token + ">");
+                            clientData.setLoggedIn(false);
                         }
                     } else {
                         // just a normal message
@@ -177,10 +192,10 @@ public class Server extends Thread {
                         String token = contentMatcher.group(1);
                         String msgID = contentMatcher.group(2);
                         String msgContent = contentMatcher.group(3);
-                        if (clientDataMap.containsKey(source) && clientDataMap.get(source).getToken().equals(token)) {
-                            clientDataMap.get(source).updateLastSeen();
-                            startExpirationTimer(clientDataMap.get(source));
-                            if (clientDataMap.containsKey(dest)) {
+                        if (clientData.isLoggedIn() && clientData.getToken().equals(token)) {
+                            clientData.updateLastSeen();
+                            startExpirationTimer(clientData);
+                            if (clientDataMap.containsKey(dest) && clientDataMap.get(dest).isLoggedIn()) {
                                 ClientData destData = clientDataMap.get(dest);
                                 String msgText = source + "->" + dest + "#<" + destData.getToken() + "><" + msgID + ">" + msgContent;
                                 sendMessage(destData, msgText);
@@ -194,13 +209,14 @@ public class Server extends Thread {
                         }
                     }
                 }
+
             } catch (IOException e) {
                 e.printStackTrace();
-            } catch (BadPaddingException e) {
+            } catch (NoSuchAlgorithmException e) {
                 e.printStackTrace();
             } catch (IllegalBlockSizeException e) {
                 e.printStackTrace();
-            } catch (NoSuchAlgorithmException e) {
+            } catch (BadPaddingException e) {
                 e.printStackTrace();
             } catch (InvalidKeySpecException e) {
                 e.printStackTrace();
@@ -208,8 +224,28 @@ public class Server extends Thread {
         }
     }
 
+    private void reqKey(ClientData data) throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
+        byte[] buf = new byte[1024];
+        DatagramPacket packet = new DatagramPacket(buf, buf.length);
+        sendMessageUnencrypted(data.addr, data.port, "server->" + data.getName() + "#reqkey");
+        String keyMsg = "";
+        while (!KEY_PATTERN.matcher(keyMsg).matches()) {
+            socket.receive(packet);
+            keyMsg = new String(buf, 0, packet.getLength());
+            if (!KEY_PATTERN.matcher(keyMsg).matches()) {
+                buffer.add(new Pair<>(packet, Arrays.copyOf(buf, buf.length)));
+            }
+        }
+        Matcher keyMatcher = KEY_PATTERN.matcher(keyMsg);
+        keyMatcher.find();
+        String key = keyMatcher.group(1);
+        byte[] keyBytes = Base64.getDecoder().decode(key);
+        PublicKey clientKey = KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(keyBytes));
+        data.setKey(clientKey);
+    }
+
     protected void sendMessage(ClientData clientData, String msg) throws IOException {
-        System.out.println("Server sending message:\n" + msg);
+        System.out.println("Server encrypting raw message:\n\t" + msg);
 
         byte[] replyBuf = msg.getBytes();
         try {
@@ -219,12 +255,13 @@ public class Server extends Thread {
         } catch (IllegalBlockSizeException e) {
             e.printStackTrace();
         }
+        System.out.println("Server sending message:\n\t" + new String(replyBuf));
         DatagramPacket retPacket = new DatagramPacket(replyBuf, replyBuf.length, clientData.getAddr(), clientData.getPort());
         socket.send(retPacket);
     }
 
     protected void sendMessageUnencrypted(InetAddress addr, int port, String msg) throws IOException {
-        System.out.println("Server sending message:\n" + msg);
+        System.out.println("Server sending message:\n\t" + msg);
         byte[] replyBuf = msg.getBytes();
         DatagramPacket retPacket = new DatagramPacket(replyBuf, replyBuf.length, addr, port);
         socket.send(retPacket);
@@ -346,7 +383,7 @@ public class Server extends Thread {
         public void run() {
             // hasn't been seen in 5 minutes
             if (System.currentTimeMillis() - client.getLastSeen() > 300000) {
-                clientDataMap.remove(client);
+                client.setLoggedIn(false);
             }
         }
     }
