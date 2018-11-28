@@ -10,7 +10,7 @@ public class Message {
     private final String id;
     private final String contents;
 
-    protected static final String MSG_REGEX = "(\\S+)-\\>(\\S+)#\\<(.*)\\>\\<(.*)\\>(.*)";
+    protected static final String MSG_REGEX = "(\\S+)-\\>(\\S+)#\\<(.{6})\\>\\<(\\d{10})\\>(.*)";
     protected static final Pattern MSG_PATTERN = Pattern.compile(MSG_REGEX);
 
     public Message(String source, String dest, String id, String contents) {
