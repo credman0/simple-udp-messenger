@@ -23,6 +23,7 @@ public class ClientMessageListener extends Thread{
     protected final Hashtable<Pattern, Condition> expectedTable = new Hashtable<>();
     protected final Hashtable<Pattern, String> expectedTableOut = new Hashtable<>();
     protected final Hashtable<Pattern, Boolean> expectEncrypted = new Hashtable<>();
+    protected final Hashtable<Pattern, Boolean> interruptOnErrorTable = new Hashtable<>();
     protected final Lock lock = new ReentrantLock();
     protected final ClientUI ui;
     protected final Cipher decryptCipher;
@@ -76,12 +77,21 @@ public class ClientMessageListener extends Thread{
                                 continue;
                             }
                         }
+                        if (interruptOnErrorTable.get(p) && msgTest.matches("^server->\\S+#<.{6}><\\d{10}>Error.*")){
+                            expectedTableOut.put(p,msgTest);
+                            expectedTable.get(p).signalAll();
+                            it.remove();
+                            expectEncrypted.remove(p);
+                            interruptOnErrorTable.remove(p);
+                            continue;
+                        }
                         if (p.matcher(msgTest).matches()){
                             consumed = true;
                             expectedTableOut.put(p,msgTest);
-                                expectedTable.get(p).signalAll();
-                                it.remove();
-                                expectEncrypted.remove(p);
+                            expectedTable.get(p).signalAll();
+                            it.remove();
+                            expectEncrypted.remove(p);
+                            interruptOnErrorTable.remove(p);
                         }
                     }
                 }finally {
@@ -135,13 +145,14 @@ public class ClientMessageListener extends Thread{
      * @param timeout timeout time in milliseconds
      * @return the message that matches
      */
-    public String waitFor(String regex, long timeout, boolean encrypted){
+    public String waitFor(String regex, long timeout, boolean encrypted, boolean interruptOnError){
         Pattern pattern = Pattern.compile(regex);
         Condition condition = lock.newCondition();
         lock.lock();
         try{
             expectedTable.put(pattern,condition);
             expectEncrypted.put(pattern, encrypted);
+            interruptOnErrorTable.put(pattern, interruptOnError);
             condition.await(timeout, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             e.printStackTrace();

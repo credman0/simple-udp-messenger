@@ -80,7 +80,7 @@ public class ClientMessageHandler extends Thread {
 
         Thread keyReqHandler = new Thread(() -> {
             while (true){
-                String req = listener.waitFor("server->\\S+#reqkey", 10000, false);
+                String req = listener.waitFor("server->\\S+#reqkey", 10000, false, false);
                 if (req!=null){
                     try {
                         sendRawUnencrypted((ui.fetchUserID()+"->server#key:"+new String(Base64.getEncoder().encode(keyPair.getPublic().getEncoded()))).getBytes());
@@ -101,7 +101,7 @@ public class ClientMessageHandler extends Thread {
 
         byte[] buf = (ui.fetchUserID()+"->server#reqkey").getBytes();
         sendRawUnencrypted(buf);
-        String ret = listener.waitFor(KEY_REGEX, 2000, false);
+        String ret = listener.waitFor(KEY_REGEX, 2000, false, false);
         if (ret==null){
             // most likely the server is offline
             return;
@@ -132,7 +132,7 @@ public class ClientMessageHandler extends Thread {
         }
         // send the request
         sendRaw(username, "server", "login<"+password+">");
-        ret = listener.waitFor(LOGIN_REGEX, 2000, true);
+        ret = listener.waitFor(LOGIN_REGEX, 2000, true, false);
         if (ret==null){
             // most likely the server is offline
             return;
@@ -144,6 +144,7 @@ public class ClientMessageHandler extends Thread {
                 ui.deliverSystemMessage(ret);
             }else {
                 token = loginMatcher.group(2);
+                ui.deliverSystemMessage("***Connection successful!***");
             }
         }
     }
@@ -195,11 +196,12 @@ public class ClientMessageHandler extends Thread {
     public boolean logoff() throws IOException {
         sendLogoff();
         String sanitizedToken = token.replaceAll("[-.\\+*?\\[^\\]$(){}=!<>|:\\\\]", "\\\\$0");
-        String confirm = listener.waitFor("server-\\>"+username+"#Success\\<"+sanitizedToken+"\\>", 2000, true);
+        String confirm = listener.waitFor("server-\\>"+username+"#Success\\<"+sanitizedToken+"\\>", 2000, true, false);
         if (confirm!=null){
             token = null;
             socket.close();
             setSocket(null);
+            ui.deliverSystemMessage("***Disconnect successful!***");
         }
         return confirm != null;
     }
@@ -213,12 +215,16 @@ public class ClientMessageHandler extends Thread {
     }
 
     protected void sendMessage(Message m, boolean confirmReceived) throws IOException {
+        if (!isConnected()){
+            ui.deliverSystemMessage("Cannot send message while disconnected!");
+            return;
+        }
         sendRaw(m.getSource(),m.getDest(),"<"+token+">"+"<"+m.getId()+">"+m.getContents());
         // replace special characters with same character with preceding backslash
         String sanitizedToken = token.replaceAll("[-.\\+*?\\[^\\]$(){}=!<>|:\\\\]", "\\\\$0");
         String sanitizedContents = m.getContents().replaceAll("[-.\\+*?\\[^\\]$(){}=!<>|:\\\\]", "\\\\$0");
         if (confirmReceived) {
-            String confirm = listener.waitFor("server-\\>" + m.getSource() + "#\\<" + sanitizedToken + "\\>\\<" + m.getId() + "\\>Success: " + sanitizedContents, 2000, true);
+            String confirm = listener.waitFor("server-\\>" + m.getSource() + "#\\<" + sanitizedToken + "\\>\\<" + m.getId() + "\\>Success: " + sanitizedContents, 2000, true, true);
             if (confirm == null) {
                 // reattempt
                 sendMessage(m);
