@@ -1,6 +1,7 @@
 package server;
 
 import java.net.InetAddress;
+import java.security.PublicKey;
 
 class ClientData {
 
@@ -9,6 +10,8 @@ class ClientData {
     protected int port;
     protected String token;
     protected long lastSeen;
+    protected PublicKey key;
+    protected boolean loggedIn = false;
 
     public ClientData(String name, InetAddress addr, int port, String token) {
         this.name = name;
@@ -41,4 +44,21 @@ class ClientData {
     public long getLastSeen() {
         return lastSeen;
     }
+
+    public PublicKey getKey() {
+        return key;
+    }
+
+    public void setKey(PublicKey key) {
+        this.key = key;
+    }
+
+    public boolean isLoggedIn() {
+        return loggedIn;
+    }
+
+    public void setLoggedIn(boolean loggedIn) {
+        this.loggedIn = loggedIn;
+    }
+
 }
