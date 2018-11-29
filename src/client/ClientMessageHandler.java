@@ -167,7 +167,7 @@ public class ClientMessageHandler extends Thread {
                 Message m = ui.getSendQueue().remove();
                 try {
                     if (m.getContents().equals("/logoff")&&m.getDest().equals("server")){
-                        sendLogoff();
+                        logoff();
                     }else {
                         if (!m.getContents().equals("Received")) {
                             sendMessage(m);
